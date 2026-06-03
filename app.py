@@ -330,6 +330,17 @@ def _lat(s):
     return s.encode("latin-1", "replace").decode("latin-1")
 
 
+def _wrap_long(txt, n=64):
+    # quebra "palavras" muito longas (ex.: links sem espaço) pra o multi_cell conseguir wrapar
+    out = []
+    for tok in str(txt).split(" "):
+        while len(tok) > n:
+            out.append(tok[:n])
+            tok = tok[n:]
+        out.append(tok)
+    return " ".join(out)
+
+
 def build_pdf(mentee, s, marcos):
     from fpdf import FPDF
     k = senioridade_idx(s)
@@ -337,31 +348,37 @@ def build_pdf(mentee, s, marcos):
     ln = lambda v: LEVELS[v - 1] if v else "a definir"
     pdf = FPDF(format="A4")
     pdf.set_auto_page_break(True, margin=16)
+    pdf.set_margins(14, 14, 14)
     pdf.add_page()
+
+    def mc(txt, h=6):
+        pdf.set_x(pdf.l_margin)
+        pdf.multi_cell(0, h, _lat(_wrap_long(txt)))
+
     # cabeçalho roxo
     pdf.set_fill_color(74, 45, 133)
     pdf.rect(0, 0, 210, 34, "F")
     pdf.set_xy(14, 8)
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Helvetica", "B", 20)
-    pdf.cell(0, 9, _lat("Mapa da Virada"), ln=1)
+    mc("Mapa da Virada", 9)
     pdf.set_x(14)
     pdf.set_font("Helvetica", "", 10)
-    pdf.cell(0, 5, _lat(f"{mentee}  -  Pleno (Analista II) -> Senior (Analista III)  -  Atracao e Selecao"), ln=1)
+    mc(f"{mentee}  -  Pleno (Analista II) -> Senior (Analista III)  -  Atracao e Selecao", 5)
     pdf.set_x(14)
     pdf.set_text_color(210, 200, 235)
     pdf.set_font("Helvetica", "", 8)
-    pdf.cell(0, 5, _lat("Mentoria NextGen  -  Frente 1 + Horizonte"), ln=1)
+    mc("Mentoria NextGen  -  Frente 1 + Horizonte", 5)
     pdf.ln(8)
     pdf.set_text_color(40, 40, 40)
     pdf.set_font("Helvetica", "", 9)
-    pdf.cell(0, 5, _lat(f"Gerado em {dt.datetime.now().strftime('%d/%m/%Y %H:%M')}"), ln=1)
+    mc(f"Gerado em {dt.datetime.now().strftime('%d/%m/%Y %H:%M')}", 5)
 
     def sec(title):
         pdf.ln(3)
         pdf.set_text_color(93, 58, 155)
         pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 7, _lat(title), ln=1)
+        mc(title, 7)
         pdf.set_text_color(40, 40, 40)
         pdf.set_font("Helvetica", "", 10)
 
@@ -370,11 +387,11 @@ def build_pdf(mentee, s, marcos):
                      ("Autonomia senior", f"{k['aut_sr']}/{k['rs']}"),
                      ("Requisitos formais", f"{k['req_hard']}/3"),
                      ("Prontidao p/ lideranca", f"{li}%")]:
-        pdf.cell(0, 6, _lat(f"   {lab}: {val}"), ln=1)
+        mc(f"   {lab}: {val}")
 
     sec("As duas competencias do Book")
-    pdf.multi_cell(0, 6, _lat(f"   Capacidade Analitica: {ln(s['comp']['analitica'])}"))
-    pdf.multi_cell(0, 6, _lat(f"   Influencia e Persuasao: {ln(s['comp']['influencia'])}"))
+    mc(f"   Capacidade Analitica: {ln(s['comp']['analitica'])}")
+    mc(f"   Influencia e Persuasao: {ln(s['comp']['influencia'])}")
 
     sec("Autonomia por responsabilidade")
     rs = RESP_BASE + s.get("custom", [])
@@ -382,39 +399,39 @@ def build_pdf(mentee, s, marcos):
         a = s["aut"][i] if i < len(s["aut"]) else {"n": 0, "ev": ""}
         nivel = STEPS[a["n"] - 1] if a.get("n") else "-"
         pdf.set_font("Helvetica", "B", 9)
-        pdf.multi_cell(0, 5, _lat(f"{label}: {nivel}"))
+        mc(f"{label}: {nivel}", 5)
         if a.get("ev"):
             pdf.set_font("Helvetica", "I", 9)
-            pdf.multi_cell(0, 5, _lat(f"      {a['ev']}"))
+            mc(f"      {a['ev']}", 5)
         pdf.set_font("Helvetica", "", 10)
 
     sec("Requisitos formais")
     for kk, b, sub, opt in REQ:
         mark = "[x]" if s["req"].get(kk) else "[ ]"
-        pdf.multi_cell(0, 6, _lat(f"{mark} {b}" + ("  (desejavel)" if opt else "")))
+        mc(f"{mark} {b}" + ("  (desejavel)" if opt else ""))
 
     sec("Cofre de evidencias")
     if s.get("ev"):
         for e in s["ev"]:
             pdf.set_font("Helvetica", "B", 9)
-            pdf.multi_cell(0, 5, _lat(f"[{e.get('tag')}] {e.get('t')}"))
+            mc(f"[{e.get('tag')}] {e.get('t')}", 5)
             if e.get("d"):
                 pdf.set_font("Helvetica", "", 9)
-                pdf.multi_cell(0, 5, _lat(e["d"]))
+                mc(e["d"], 5)
             meta = f"guardado em {e.get('date','')}" + (f"  -  prova: {e['p']}" if e.get("p") else "")
             pdf.set_font("Helvetica", "I", 8)
             pdf.set_text_color(120, 120, 120)
-            pdf.multi_cell(0, 4, _lat(meta))
+            mc(meta, 4)
             pdf.set_text_color(40, 40, 40)
             pdf.ln(1)
         pdf.set_font("Helvetica", "", 10)
     else:
-        pdf.cell(0, 6, _lat("(vazio)"), ln=1)
+        mc("(vazio)")
 
     sec(f"Horizonte de lideranca  -  prontidao {li}%")
     for kk, b, note in LEAD:
         v = s["lead"].get(kk, 0)
-        pdf.multi_cell(0, 6, _lat(f"   {b}: {LSCALE[v - 1] if v else '-'}"))
+        mc(f"   {b}: {LSCALE[v - 1] if v else '-'}")
 
     sec("Leitura")
     faltam = [t for kk, t in [("tempo", "tempo (3 anos)"), ("gerencia", "vagas de gerencia"),
@@ -423,17 +440,17 @@ def build_pdf(mentee, s, marcos):
                f"Competencias: Analitica {ln(s['comp']['analitica'])}, Influencia {ln(s['comp']['influencia'])}. "
                + ("Requisitos: faltam " + ", ".join(faltam) + ". " if faltam else "Requisitos: todos atendidos. ")
                + f"Lideranca em {li}%. Cofre com {len(s.get('ev', []))} evidencia(s).")
-    pdf.multi_cell(0, 6, _lat(leitura))
+    mc(leitura)
 
     if marcos:
         sec("Linha do tempo (marcos)")
         for i, m in enumerate(marcos):
-            pdf.cell(0, 5, _lat(f"{i+1}. {m['d']}  -  senioridade {m['sen']}% / lideranca {m.get('lid', 0)}%"), ln=1)
+            mc(f"{i+1}. {m['d']}  -  senioridade {m['sen']}% / lideranca {m.get('lid', 0)}%", 5)
 
     pdf.ln(6)
     pdf.set_font("Helvetica", "I", 8)
     pdf.set_text_color(140, 140, 140)
-    pdf.multi_cell(0, 4, _lat("Documento de autoavaliacao  -  Mentoria NextGen  -  uso da mentoria."))
+    mc("Documento de autoavaliacao  -  Mentoria NextGen  -  uso da mentoria.", 4)
     return bytes(pdf.output())
 
 
