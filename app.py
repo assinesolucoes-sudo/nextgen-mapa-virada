@@ -320,6 +320,123 @@ def hydrate(mentee):
     st.session_state["_loaded"] = mentee
 
 
+# ============================================================ RELATÓRIO PDF
+def _lat(s):
+    if s is None:
+        s = ""
+    for a, b in {"—": "-", "–": "-", "•": "-", "→": "->", "“": '"', "”": '"',
+                 "’": "'", "‘": "'", "…": "...", "✦": "*", "º": "o", "ª": "a"}.items():
+        s = s.replace(a, b)
+    return s.encode("latin-1", "replace").decode("latin-1")
+
+
+def build_pdf(mentee, s, marcos):
+    from fpdf import FPDF
+    k = senioridade_idx(s)
+    li = lideranca_idx(s)
+    ln = lambda v: LEVELS[v - 1] if v else "a definir"
+    pdf = FPDF(format="A4")
+    pdf.set_auto_page_break(True, margin=16)
+    pdf.add_page()
+    # cabeçalho roxo
+    pdf.set_fill_color(74, 45, 133)
+    pdf.rect(0, 0, 210, 34, "F")
+    pdf.set_xy(14, 8)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Helvetica", "B", 20)
+    pdf.cell(0, 9, _lat("Mapa da Virada"), ln=1)
+    pdf.set_x(14)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 5, _lat(f"{mentee}  -  Pleno (Analista II) -> Senior (Analista III)  -  Atracao e Selecao"), ln=1)
+    pdf.set_x(14)
+    pdf.set_text_color(210, 200, 235)
+    pdf.set_font("Helvetica", "", 8)
+    pdf.cell(0, 5, _lat("Mentoria NextGen  -  Frente 1 + Horizonte"), ln=1)
+    pdf.ln(8)
+    pdf.set_text_color(40, 40, 40)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(0, 5, _lat(f"Gerado em {dt.datetime.now().strftime('%d/%m/%Y %H:%M')}"), ln=1)
+
+    def sec(title):
+        pdf.ln(3)
+        pdf.set_text_color(93, 58, 155)
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.cell(0, 7, _lat(title), ln=1)
+        pdf.set_text_color(40, 40, 40)
+        pdf.set_font("Helvetica", "", 10)
+
+    sec("Indicadores")
+    for lab, val in [("Prontidao p/ nivel III", f"{k['total']}%"),
+                     ("Autonomia senior", f"{k['aut_sr']}/{k['rs']}"),
+                     ("Requisitos formais", f"{k['req_hard']}/3"),
+                     ("Prontidao p/ lideranca", f"{li}%")]:
+        pdf.cell(0, 6, _lat(f"   {lab}: {val}"), ln=1)
+
+    sec("As duas competencias do Book")
+    pdf.multi_cell(0, 6, _lat(f"   Capacidade Analitica: {ln(s['comp']['analitica'])}"))
+    pdf.multi_cell(0, 6, _lat(f"   Influencia e Persuasao: {ln(s['comp']['influencia'])}"))
+
+    sec("Autonomia por responsabilidade")
+    rs = RESP_BASE + s.get("custom", [])
+    for i, label in enumerate(rs):
+        a = s["aut"][i] if i < len(s["aut"]) else {"n": 0, "ev": ""}
+        nivel = STEPS[a["n"] - 1] if a.get("n") else "-"
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.multi_cell(0, 5, _lat(f"{label}: {nivel}"))
+        if a.get("ev"):
+            pdf.set_font("Helvetica", "I", 9)
+            pdf.multi_cell(0, 5, _lat(f"      {a['ev']}"))
+        pdf.set_font("Helvetica", "", 10)
+
+    sec("Requisitos formais")
+    for kk, b, sub, opt in REQ:
+        mark = "[x]" if s["req"].get(kk) else "[ ]"
+        pdf.multi_cell(0, 6, _lat(f"{mark} {b}" + ("  (desejavel)" if opt else "")))
+
+    sec("Cofre de evidencias")
+    if s.get("ev"):
+        for e in s["ev"]:
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.multi_cell(0, 5, _lat(f"[{e.get('tag')}] {e.get('t')}"))
+            if e.get("d"):
+                pdf.set_font("Helvetica", "", 9)
+                pdf.multi_cell(0, 5, _lat(e["d"]))
+            meta = f"guardado em {e.get('date','')}" + (f"  -  prova: {e['p']}" if e.get("p") else "")
+            pdf.set_font("Helvetica", "I", 8)
+            pdf.set_text_color(120, 120, 120)
+            pdf.multi_cell(0, 4, _lat(meta))
+            pdf.set_text_color(40, 40, 40)
+            pdf.ln(1)
+        pdf.set_font("Helvetica", "", 10)
+    else:
+        pdf.cell(0, 6, _lat("(vazio)"), ln=1)
+
+    sec(f"Horizonte de lideranca  -  prontidao {li}%")
+    for kk, b, note in LEAD:
+        v = s["lead"].get(kk, 0)
+        pdf.multi_cell(0, 6, _lat(f"   {b}: {LSCALE[v - 1] if v else '-'}"))
+
+    sec("Leitura")
+    faltam = [t for kk, t in [("tempo", "tempo (3 anos)"), ("gerencia", "vagas de gerencia"),
+                              ("pos", "pos-graduacao")] if not s["req"].get(kk)]
+    leitura = (f"Opera com autonomia de senior em {k['aut_sr']} de {k['rs']} responsabilidades. "
+               f"Competencias: Analitica {ln(s['comp']['analitica'])}, Influencia {ln(s['comp']['influencia'])}. "
+               + ("Requisitos: faltam " + ", ".join(faltam) + ". " if faltam else "Requisitos: todos atendidos. ")
+               + f"Lideranca em {li}%. Cofre com {len(s.get('ev', []))} evidencia(s).")
+    pdf.multi_cell(0, 6, _lat(leitura))
+
+    if marcos:
+        sec("Linha do tempo (marcos)")
+        for i, m in enumerate(marcos):
+            pdf.cell(0, 5, _lat(f"{i+1}. {m['d']}  -  senioridade {m['sen']}% / lideranca {m.get('lid', 0)}%"), ln=1)
+
+    pdf.ln(6)
+    pdf.set_font("Helvetica", "I", 8)
+    pdf.set_text_color(140, 140, 140)
+    pdf.multi_cell(0, 4, _lat("Documento de autoavaliacao  -  Mentoria NextGen  -  uso da mentoria."))
+    return bytes(pdf.output())
+
+
 # ============================================================ PÁGINA MENTORADA
 def page_mentee(mentee):
     hydrate(mentee)
@@ -347,25 +464,6 @@ def page_mentee(mentee):
                     "(peso maior), o nível nas duas competências do Book e os requisitos formais. Quanto mais "
                     "itens em nível sênior, mais alto. A **prontidão pra liderança** é a média do que você marcar "
                     "na seção Horizonte. Nada vira nota — é um espelho do momento, que muda a cada resposta sua.")
-
-    # ---- EVOLUÇÃO (perto do topo) ----
-    block_strip("SUA EVOLUÇÃO", "Linha do tempo",
-                "Salve um marco a cada encontro (ou quando algo mudar). Os pontos vão se somando — nada se apaga.")
-    _evolucao_chart(st.session_state.get("marcos", []))
-    cma, cmb = st.columns([1, 2])
-    if cma.button("Salvar marco de hoje"):
-        s2 = build_state()
-        sen, lid = senioridade_idx(s2)["total"], lideranca_idx(s2)
-        st.session_state["marcos"].append({"d": dt.date.today().strftime("%d/%m"), "sen": sen, "lid": lid})
-        if storage_ready():
-            save_state(mentee, s2)
-            append_marco(mentee, sen, lid)
-        st.rerun()
-    with st.expander("Como funciona a linha do tempo?"):
-        st.markdown("Cada vez que você clica em **Salvar marco de hoje**, eu tiro uma foto dos seus dois "
-                    "indicadores naquele dia (senioridade e liderança) e guardo com a data. Conforme você "
-                    "revisita e ajusta ao longo dos meses, salvando novos marcos, eles vão **se somando** no "
-                    "gráfico — você enxerga os pontos subindo. **Você nunca apaga nada**: a jornada inteira fica registrada.")
 
     # ---- COMPETÊNCIAS ----
     block_strip("RÉGUA · PARTE 1 DE 3", "As duas competências do Book",
@@ -414,7 +512,14 @@ def page_mentee(mentee):
                       label_visibility="collapsed")
         if i >= len(RESP_BASE):
             if st.button("remover esta responsabilidade", key=f"delresp_{i}"):
-                st.session_state["custom"].pop(i - len(RESP_BASE))
+                s_now = build_state()
+                pos = i - len(RESP_BASE)
+                if pos < len(s_now["custom"]):
+                    s_now["custom"].pop(pos)
+                if i < len(s_now["aut"]):
+                    s_now["aut"].pop(i)
+                if storage_ready():
+                    save_state(mentee, s_now)
                 st.session_state["_loaded"] = None
                 st.rerun()
         st.divider()
@@ -434,6 +539,11 @@ def page_mentee(mentee):
     block_strip("EVIDÊNCIAS", "Cofre de evidências",
                 "As entregas que provam sua senioridade. Vá guardando ao longo do tempo — comece pelas 3 que "
                 "você considera nível sênior. Ele acumula e fica como seu acervo.")
+    with st.expander("Como funciona o cofre?"):
+        st.markdown("Aqui você guarda as **provas concretas** da sua senioridade — as entregas que mostram, na "
+                    "prática, que já opera em nível III. Cada evidência se liga a uma parte da régua (competência, "
+                    "autonomia ou liderança), guarda a data e onde está a prova. O cofre **acumula e nunca apaga**. "
+                    "A meta do Encontro 03 é começar com 3 entregas que você considera nível sênior, 2 linhas cada.")
     with st.form("add_ev", clear_on_submit=True):
         t = st.text_input("Título da entrega")
         tag = st.selectbox("Marcar como", ["Capacidade Analítica", "Influência e Persuasão",
@@ -497,13 +607,39 @@ def page_mentee(mentee):
         f"Coordenação/HRBP; o eixo a cuidar é a flexibilidade na gestão de pessoas.</p>"
         f"<p>Cofre: <b>{len(s['ev'])}</b> evidência(s).</p></div>", unsafe_allow_html=True)
 
-    st.write("")
+    # ---- EVOLUÇÃO (no final) ----
+    block_strip("SUA EVOLUÇÃO", "Linha do tempo",
+                "Salve um marco a cada encontro (ou quando algo mudar). Os pontos vão se somando — nada se apaga.")
+    _evolucao_chart(st.session_state.get("marcos", []))
+    if st.button("Salvar marco de hoje"):
+        s2 = build_state()
+        sen, lid = senioridade_idx(s2)["total"], lideranca_idx(s2)
+        st.session_state["marcos"].append({"d": dt.date.today().strftime("%d/%m"), "sen": sen, "lid": lid})
+        if storage_ready():
+            save_state(mentee, s2)
+            append_marco(mentee, sen, lid)
+        st.rerun()
+    with st.expander("Como funciona a linha do tempo?"):
+        st.markdown("Cada vez que você clica em **Salvar marco de hoje**, eu tiro uma foto dos seus dois "
+                    "indicadores naquele dia (senioridade e liderança) e guardo com a data. Conforme você "
+                    "revisita e ajusta ao longo dos meses, salvando novos marcos, eles vão **se somando** no "
+                    "gráfico — você enxerga os pontos subindo. **Você nunca apaga nada**: a jornada inteira fica registrada.")
+
+    # ---- AÇÕES ----
+    block_strip("FECHAMENTO", "Salvar e relatório", "Guarde seu progresso e baixe o relatório quando quiser.")
     if st.button("💾 Salvar progresso", type="primary", use_container_width=True):
         if storage_ready():
             save_state(mentee, build_state())
             st.success("Progresso salvo. Pode fechar e voltar quando quiser — fica guardado.")
         else:
             st.error("Persistência não configurada — não foi possível guardar.")
+    try:
+        pdf_bytes = build_pdf(mentee, build_state(), st.session_state.get("marcos", []))
+        st.download_button("⬇️ Baixar relatório (PDF)", data=pdf_bytes,
+                           file_name=f"mapa_da_virada_{mentee}.pdf", mime="application/pdf",
+                           use_container_width=True)
+    except Exception as e:
+        st.caption(f"Relatório PDF indisponível ({e}).")
 
 
 # ============================================================ PÁGINA ADMIN
@@ -532,23 +668,53 @@ def page_admin():
     c3.metric("Requisitos", f"{k['req_hard']}/3")
     c4.metric("Liderança", f"{lideranca_idx(s)}%")
 
-    block_strip("EVOLUÇÃO", "Linha do tempo", "Marcos salvos pela mentorada ao longo da jornada.")
-    _evolucao_chart(load_marcos(mentee))
+    marcos = load_marcos(mentee)
 
-    block_strip("DETALHE", "Autonomia por responsabilidade", "")
+    block_strip("ESPELHO", "Competências do Book", "")
+    lname = lambda v: LEVELS[v - 1] if v else "— (não respondido)"
+    st.markdown(f"- **Capacidade Analítica** — {lname(s['comp']['analitica'])}")
+    st.markdown(f"- **Influência e Persuasão** — {lname(s['comp']['influencia'])}")
+
+    block_strip("ESPELHO", "Autonomia por responsabilidade", "")
     rs = RESP_BASE + s.get("custom", [])
     for i, label in enumerate(rs):
         a = s["aut"][i] if i < len(s["aut"]) else {"n": 0, "ev": ""}
-        nivel = STEPS[a["n"] - 1] if a.get("n") else "—"
-        st.markdown(f"- **{label}** — {nivel}" + (f"  \n  _{a['ev']}_" if a.get("ev") else ""))
+        nivel = STEPS[a["n"] - 1] if a.get("n") else "— (não respondido)"
+        st.markdown(f"- **{label}** — {nivel}" + (f"  \n  _“{a['ev']}”_" if a.get("ev") else ""))
 
-    block_strip("DETALHE", "Cofre de evidências", "")
+    block_strip("ESPELHO", "Requisitos formais", "")
+    for kk, b, sub, opt in REQ:
+        mark = "✅" if s["req"].get(kk) else "⬜"
+        st.markdown(f"{mark} {b}" + (" · desejável" if opt else ""))
+
+    block_strip("ESPELHO", "Cofre de evidências", "")
     if s.get("ev"):
         for e in s["ev"]:
-            st.markdown(f"- <span class='pill'>{e.get('tag')}</span> **{e.get('t')}** — {e.get('d','')} "
-                        f"<small>({e.get('date','')})</small>", unsafe_allow_html=True)
+            with st.container(border=True):
+                st.markdown(f"<span class='pill'>{e.get('tag')}</span> **{e.get('t')}**", unsafe_allow_html=True)
+                if e.get("d"):
+                    st.markdown(e["d"])
+                meta = f"guardado em {e.get('date','')}" + (f" · prova: {e['p']}" if e.get("p") else "")
+                st.caption(meta)
     else:
         st.caption("_vazio_")
+
+    block_strip("ESPELHO", "Horizonte de liderança", "")
+    for kk, b, note in LEAD:
+        v = s["lead"].get(kk, 0)
+        st.markdown(f"- **{b}** — {LSCALE[v - 1] if v else '— (não respondido)'}")
+
+    block_strip("EVOLUÇÃO", "Linha do tempo", "Marcos salvos pela mentorada ao longo da jornada.")
+    _evolucao_chart(marcos)
+
+    block_strip("FECHAMENTO", "Relatório", "Baixe o relatório pra guardar com você.")
+    try:
+        pdf_bytes = build_pdf(mentee, s, marcos)
+        st.download_button("⬇️ Baixar relatório (PDF)", data=pdf_bytes,
+                           file_name=f"mapa_da_virada_{mentee}.pdf", mime="application/pdf",
+                           use_container_width=True)
+    except Exception as e:
+        st.caption(f"Relatório PDF indisponível ({e}).")
 
     with st.expander("Estado bruto (JSON)"):
         st.json(s)
