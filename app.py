@@ -189,9 +189,11 @@ def senioridade_idx(s):
     aut_score = sum(a["n"] for a in s["aut"]) / (rs * 4.0)
     aut_sr = sum(1 for a in s["aut"] if a["n"] >= 3)
     req_hard = sum(1 for k in REQ_HARD if s["req"].get(k))
+    req_all = sum(1 for k, _, _, _ in REQ if s["req"].get(k))
     req_score = (req_hard + (0.5 if s["req"].get("agil") else 0)) / 3.5
     total = round((c * 0.35 + aut_score * 0.40 + req_score * 0.25) * 100)
-    return {"total": total, "aut_sr": aut_sr, "req_hard": req_hard, "rs": len(s["aut"])}
+    return {"total": total, "aut_sr": aut_sr, "req_hard": req_hard,
+            "req_all": req_all, "rs": len(s["aut"])}
 
 
 def lideranca_idx(s):
@@ -385,7 +387,7 @@ def build_pdf(mentee, s, marcos):
     sec("Indicadores")
     for lab, val in [("Prontidao p/ nivel III", f"{k['total']}%"),
                      ("Autonomia senior", f"{k['aut_sr']}/{k['rs']}"),
-                     ("Requisitos formais", f"{k['req_hard']}/3"),
+                     ("Requisitos formais", f"{k['req_all']}/4"),
                      ("Prontidao p/ lideranca", f"{li}%")]:
         mc(f"   {lab}: {val}")
 
@@ -472,7 +474,7 @@ def page_mentee(mentee):
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Prontidão p/ nível III", f"{k['total']}%")
     c2.metric("Autonomia sênior", f"{k['aut_sr']}/{k['rs']}")
-    c3.metric("Requisitos formais", f"{k['req_hard']}/3")
+    c3.metric("Requisitos formais", f"{k['req_all']}/4")
     c4.metric("Prontidão p/ liderança", f"{lideranca_idx(s)}%")
     st.markdown("<div class='metric-cap'>Retrato de hoje, não nota. Atualizam conforme você responde.</div>",
                 unsafe_allow_html=True)
@@ -682,7 +684,7 @@ def page_admin():
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Prontidão p/ III", f"{k['total']}%")
     c2.metric("Autonomia sênior", f"{k['aut_sr']}/{k['rs']}")
-    c3.metric("Requisitos", f"{k['req_hard']}/3")
+    c3.metric("Requisitos", f"{k['req_all']}/4")
     c4.metric("Liderança", f"{lideranca_idx(s)}%")
 
     marcos = load_marcos(mentee)
